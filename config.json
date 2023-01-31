@@ -1,0 +1,29 @@
+[
+    {
+        "name": "Vision",
+        "id": "cs.CV",
+        "keywords": [
+            "lidar",
+            "detect",
+            "autonomous",
+            "deep",
+            "anchor"
+        ]
+    },
+    {
+        "name": "Robotics",
+        "id": "cs.RO",
+        "keywords": [
+            "lidar",
+            "detect",
+            "autonomous",
+            "deep",
+            "locali",
+            "stixel",
+            "segm",
+            "semantic",
+            "semseg",
+            "anchor"
+        ]
+    }
+]
