@@ -3,8 +3,6 @@ import re
 import urllib
 import urllib.request
 
-import pandas
-
 MAX_ITEMS = 1_000_000
 
 
@@ -27,7 +25,7 @@ def load_list(code: str) -> list:
     patterns = {
         'title':
         '<span class="descriptor">Title:</span>(.*)</div><div class="list-authors">',
-        'abstract': '<a href="([/\w\d\.]+)" title="Abstract">',
+        'link': '<a href="([/\w\d\.]+)" title="Abstract">',
         'pdf': '<a href="([/\w\d\.]+)" title="Download PDF">',
     }
 
@@ -55,17 +53,15 @@ def load_list(code: str) -> list:
             for key, pattern in patterns.items()
         }
 
-        for key_link in ('abstract', 'pdf'):
-            item[key_link] = f'https://arxiv.org{item[key_link][0]}' if bool(
-                item[key_link]) else ''
+        for key_link in ('link', 'pdf'):
+            item[
+                key_link] = f'=HYPERLINK("https://arxiv.org{item[key_link][0]}", "goto")' if bool(
+                    item[key_link]) else ''
         item['title'] = item['title'][0]
 
         title = item['title']
-        title = title.replace(',', ' ').replace('.', ' ').replace(
-            '-', ' ').replace('/',
-                              ' ').replace('"',
-                                           ' ').replace(':',
-                                                        ' ').replace(';', ' ')
+        for c in ',.-/":;_+':
+            title = title.replace(c, ' ')
         parts = set(part.lower() for part in title.split(' ') if bool(part))
         item['keywords'] = parts
 
@@ -93,9 +89,8 @@ def export():
             ]
 
             to_write = {
-                'title': [item['title'] for item in summary],
-                'link': [item['abstract'] for item in summary],
-                'doc': [item['pdf'] for item in summary],
+                key: [item[key] for item in summary]
+                for key in ('title', 'link', 'pdf')
             }
 
             pandas.DataFrame(to_write).style.apply(
@@ -103,8 +98,8 @@ def export():
                 axis=None).to_excel(writer,
                                     sheet_name=config['name'],
                                     index=False)
-            writer.sheets[config['name']].set_column(0, 0, 90)
-            writer.sheets[config['name']].set_column(1, len(to_write) - 1, 30)
+            writer.sheets[config['name']].set_column(0, 0, 96)
+            writer.sheets[config['name']].set_column(1, len(to_write) - 1, 4)
 
 
 export()
