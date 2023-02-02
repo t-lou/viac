@@ -1,3 +1,4 @@
+import datetime
 import json
 import re
 import urllib
@@ -7,7 +8,8 @@ MAX_ITEMS = 1_000_000
 
 
 def load_list(code: str) -> list:
-    url = f'https://arxiv.org/list/{code}/pastweek'
+    root = 'https://arxiv.org'
+    url = f'{root}/list/{code}/pastweek'
     text = urllib.request.urlopen(url).read().decode('utf8')
     pattern = 'total of (\d+) entries'
     matches = re.findall(pattern, text)
@@ -15,12 +17,9 @@ def load_list(code: str) -> list:
     if num_items < 0:
         print('number of items not item')
 
-    url = f'https://arxiv.org/list/{code}/pastweek?show={num_items if num_items >= 0 else MAX_ITEMS}'
+    url = f'{root}/list/{code}/pastweek?show={num_items if num_items >= 0 else MAX_ITEMS}'
     text = urllib.request.urlopen(url).read().decode('utf8')
-
     # open(code, 'w').write(text)
-
-    # text = open(code, 'r').read()
 
     patterns = {
         'title':
@@ -55,7 +54,7 @@ def load_list(code: str) -> list:
 
         for key_link in ('link', 'pdf'):
             item[
-                key_link] = f'=HYPERLINK("https://arxiv.org{item[key_link][0]}", "goto")' if bool(
+                key_link] = f'=HYPERLINK("{root}{item[key_link][0]}", "goto")' if bool(
                     item[key_link]) else ''
         item['title'] = item['title'][0]
 
@@ -77,10 +76,16 @@ def highlight(data, mask):
     return format
 
 
+def get_name() -> str:
+    now = datetime.datetime.now()
+    return 'viac_output_{:04}_{:02}_{:02}_{:02}.xlsx'.format(
+        now.year, now.month, now.day, now.hour)
+
+
 def export():
     import pandas
     configs = json.loads(open('config.json').read())
-    with pandas.ExcelWriter('export.xlsx', engine='xlsxwriter') as writer:
+    with pandas.ExcelWriter(get_name(), engine='xlsxwriter') as writer:
         for config in configs:
             summary = load_list(config['id'])
             is_interesting = [
@@ -98,8 +103,9 @@ def export():
                 axis=None).to_excel(writer,
                                     sheet_name=config['name'],
                                     index=False)
-            writer.sheets[config['name']].set_column(0, 0, 96)
+            writer.sheets[config['name']].set_column(0, 0, 128)
             writer.sheets[config['name']].set_column(1, len(to_write) - 1, 4)
 
 
-export()
+if __name__ == '__main__':
+    export()
