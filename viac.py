@@ -1,16 +1,23 @@
 import datetime
 import json
+import sys
+import os
 import re
 import urllib
 import urllib.request
+import yaml
 
 MAX_ITEMS = 1_000_000
+
+PARAMS = {'proxies': {}}
 
 
 def load_list(code: str) -> list:
     root = 'https://arxiv.org'
     url = f'{root}/list/{code}/pastweek'
-    text = urllib.request.urlopen(url).read().decode('utf8')
+    proxy_handler = urllib.request.ProxyHandler(PARAMS['proxies'])
+    opener = urllib.request.build_opener(proxy_handler)
+    text = opener.open(url).read().decode('utf8')
     pattern = 'total of (\d+) entries'
     matches = re.findall(pattern, text)
     num_items = int(matches[0]) if len(set(matches)) == 1 else -1
@@ -18,7 +25,7 @@ def load_list(code: str) -> list:
         print('number of items not item')
 
     url = f'{root}/list/{code}/pastweek?show={num_items if num_items >= 0 else MAX_ITEMS}'
-    text = urllib.request.urlopen(url).read().decode('utf8')
+    text = opener.open(url).read().decode('utf8')
     # open(code, 'w').write(text)
 
     patterns = {
@@ -108,4 +115,7 @@ def export():
 
 
 if __name__ == '__main__':
+    path_proxy = os.path.join(os.path.dirname(sys.argv[0]), '.proxy.yaml')
+    if os.path.isfile(path_proxy):
+        PARAMS['proxies'] = yaml.safe_load(open(path_proxy).read())
     export()
