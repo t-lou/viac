@@ -8,6 +8,9 @@ import urllib.request
 import yaml
 
 MAX_ITEMS = 1_000_000
+DEBUG_WRITE = False
+DEBUG_READ = False
+DEBUG_FILENAME = "temp.txt"
 
 PARAMS = {'proxies': {}}
 
@@ -17,16 +20,20 @@ def load_list(code: str) -> list:
     url = f'{root}/list/{code}/pastweek'
     proxy_handler = urllib.request.ProxyHandler(PARAMS['proxies'])
     opener = urllib.request.build_opener(proxy_handler)
-    text = opener.open(url).read().decode('utf8')
+    text = open(DEBUG_FILENAME, 'r', encoding='utf-8').read(
+    ) if DEBUG_READ else opener.open(url).read().decode('utf8')
     pattern = 'total of (\d+) entries'
     matches = re.findall(pattern, text)
     num_items = int(matches[0]) if len(set(matches)) == 1 else -1
     if num_items < 0:
-        print('number of items not item')
+        print('number of items not positive')
 
     url = f'{root}/list/{code}/pastweek?show={num_items if num_items >= 0 else MAX_ITEMS}'
-    text = opener.open(url).read().decode('utf8')
-    # open(code, 'w').write(text)
+    text = open(DEBUG_FILENAME, 'r', encoding='utf-8').read(
+    ) if DEBUG_READ else opener.open(url).read().decode('utf8')
+
+    if DEBUG_WRITE:
+        open(DEBUG_FILENAME, 'w', encoding='utf-8').write(text)
 
     patterns = {
         'title':
