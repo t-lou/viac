@@ -15,6 +15,30 @@ DEBUG_FILENAME = "temp.txt"
 PARAMS = {'proxies': {}}
 
 
+def clean_text(text: str) -> str:
+    return ''.join(line.strip()
+                   for line in text.split('\n')).replace('href =', 'href=')
+
+
+def split_text(text: str, start: str, end: str) -> tuple:
+    id_s = text.find(start)
+    id_e = text.find(end)
+    if id_s >= 0 and id_e >= 0 and id_e > id_s:
+        return text[(id_s + len(start)):id_e], text[(id_e + len(end)):]
+    return None, None
+
+
+def split_text_all(text: str, start: str, end: str) -> list:
+    parts = []
+
+    while text is not None:
+        part, text = split_text(text, start, end)
+        if part is not None:
+            parts.append(part)
+
+    return parts
+
+
 def load_list(code: str) -> list:
     root = 'https://arxiv.org'
     url = f'{root}/list/{code}/pastweek'
@@ -22,55 +46,41 @@ def load_list(code: str) -> list:
     opener = urllib.request.build_opener(proxy_handler)
     text = open(DEBUG_FILENAME, 'r', encoding='utf-8').read(
     ) if DEBUG_READ else opener.open(url).read().decode('utf8')
-    pattern = 'total of (\d+) entries'
+    pattern = 'Total of (\d+) entries'
     matches = re.findall(pattern, text)
     num_items = int(matches[0]) if len(set(matches)) == 1 else -1
     if num_items < 0:
         print('number of items not positive')
 
     url = f'{root}/list/{code}/pastweek?show={num_items if num_items >= 0 else MAX_ITEMS}'
+    print(url)
     text = open(DEBUG_FILENAME, 'r', encoding='utf-8').read(
     ) if DEBUG_READ else opener.open(url).read().decode('utf8')
 
     if DEBUG_WRITE:
         open(DEBUG_FILENAME, 'w', encoding='utf-8').write(text)
 
+    text = clean_text(text)
+    links = split_text_all(text, '<dt>', '</dt>')
+    descs = split_text_all(text, '<dd>', '</dd>')
+
     patterns = {
-        'title':
-        '<span class="descriptor">Title:</span>(.*)</div><div class="list-authors">',
-        'link': '<a href="([/\w\d\.]+)" title="Abstract">',
-        'pdf': '<a href="([/\w\d\.]+)" title="Download PDF">',
+        'link': '<a href="([/\w\d\.]+)" title="Abstract"',
+        'pdf': '<a href="([/\w\d\.]+)" title="Download PDF"',
     }
 
-    text = text.replace('\n', '')
-    start = '<span class="list-identifier">'
-    end = '<span class="descriptor">Authors:</span>'
-    items = []
-    for _ in range(MAX_ITEMS):
-        i = text.find(start)
-        if i < 0:
-            break
-        text = text[(i + len(start)):]
-        i = text.find(end)
-        if i < 0:
-            break
-        part = text[:i]
-        text = text[(i + len(end)):]
-
-        items.append(part)
-
     summary = []
-    for item in items:
+    for text_link, text_desc in zip(links, descs):
         item = {
-            key: re.findall(pattern, item)
+            key: re.findall(pattern, text_link)
             for key, pattern in patterns.items()
         }
+        item['title'], _ = split_text(text_desc, '</span>', '</div>')
 
         for key_link in ('link', 'pdf'):
             item[
                 key_link] = f'=HYPERLINK("{root}{item[key_link][0]}", "goto")' if bool(
                     item[key_link]) else ''
-        item['title'] = item['title'][0]
 
         title = item['title']
         for c in ',.-/":;_+':
@@ -79,6 +89,8 @@ def load_list(code: str) -> list:
         item['keywords'] = parts
 
         summary.append(item)
+
+    print(f'added {len(summary)} items')
 
     return summary
 
