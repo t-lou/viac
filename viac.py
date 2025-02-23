@@ -7,7 +7,6 @@ import urllib
 import urllib.request
 import yaml
 
-MAX_ITEMS = 1_000_000
 DEBUG_WRITE = False
 DEBUG_READ = False
 DEBUG_FILENAME = "temp.txt"
@@ -40,20 +39,13 @@ def split_text_all(text: str, start: str, end: str) -> list:
 
 
 def load_list(code: str) -> list:
-    root = 'https://arxiv.org'
-    url = f'{root}/list/{code}/pastweek'
     proxy_handler = urllib.request.ProxyHandler(PARAMS['proxies'])
     opener = urllib.request.build_opener(proxy_handler)
-    text = open(DEBUG_FILENAME, 'r', encoding='utf-8').read(
-    ) if DEBUG_READ else opener.open(url).read().decode('utf8')
-    pattern = 'Total of (\d+) entries'
-    matches = re.findall(pattern, text)
-    num_items = int(matches[0]) if len(set(matches)) == 1 else -1
-    if num_items < 0:
-        print('number of items not positive')
-
-    url = f'{root}/list/{code}/pastweek?show={num_items if num_items >= 0 else MAX_ITEMS}'
-    print(url)
+    root = 'https://arxiv.org'
+    
+    num_items = 2000
+    url = f'{root}/list/{code}/recent?skip=0&show={num_items}'
+    print(f'opening {url}')
     text = open(DEBUG_FILENAME, 'r', encoding='utf-8').read(
     ) if DEBUG_READ else opener.open(url).read().decode('utf8')
 
