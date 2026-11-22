@@ -51,10 +51,13 @@ Using the project virtual environment:
 $HOME/.venv314/bin/python viac.py
 ```
 
-By default, the workbook is created in the project directory with a name such as `viac_output_2026_11_22_01.xlsx`.
+By default, the workbook and its companion files are created in `.reports/`,
+with names such as `.reports/viac_output_2026_11_22_01.xlsx`. The `.reports/`
+directory is ignored by Git. If you use `--output`, all files are written beside
+the specified workbook path instead.
 
 VIAC also creates a `.prompt.md` file beside the workbook (for example,
-`viac_output_2026_11_22_01.prompt.md`). It contains a copy-ready request for an
+`.reports/viac_output_2026_11_22_01.prompt.md`). It contains a copy-ready request for an
 AI agent and the matched paper titles, authors, and arXiv links, grouped by
 category. The prompt asks the agent to ground its analysis in the linked sources
 and to avoid inferring findings from titles alone. To keep large lists

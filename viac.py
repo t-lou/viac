@@ -14,6 +14,7 @@ import yaml
 ROOT_DIR = Path(__file__).resolve().parent
 ARXIV_ROOT = "https://arxiv.org"
 DEFAULT_CONFIG = ROOT_DIR / "config.json"
+REPORTS_DIR = ROOT_DIR / ".reports"
 VALID_SHOW_VALUES = {25, 50, 100, 250, 500, 1000, 2000}
 PARAMS = {"proxies": {}, "timeout": 30}
 DEBUG_WRITE = False
@@ -318,7 +319,7 @@ def load_list(code: str, show: int = 2000) -> list:
 # -----------------------------
 # Excel formatting
 # -----------------------------
-def get_output_filename(output_dir: Path = ROOT_DIR) -> Path:
+def get_output_filename(output_dir: Path = REPORTS_DIR) -> Path:
     now = datetime.datetime.now()
     return (
         output_dir
@@ -360,7 +361,7 @@ def export(
     config_path = Path(config_path).resolve()
     configs = json.loads(config_path.read_text(encoding="utf-8"))
     validate_config(configs)
-    output_path = (output_path or get_output_filename(ROOT_DIR)).resolve()
+    output_path = (output_path or get_output_filename()).resolve()
     output_path.parent.mkdir(parents=True, exist_ok=True)
     prompt_categories = []
     report_categories = []
