@@ -29,6 +29,23 @@ def clean_text(text: str) -> str:
     return re.sub(r"\s+", " ", html.unescape(text)).strip()
 
 
+def title_matches_keywords(title: str, keywords: list[str]) -> bool:
+    """Match configured word prefixes against title tokens."""
+    title_tokens = re.findall(r"\w+", title.casefold(), flags=re.UNICODE)
+    for keyword in keywords:
+        keyword_tokens = re.findall(r"\w+", keyword.casefold(), flags=re.UNICODE)
+        if not keyword_tokens:
+            continue
+        token_count = len(keyword_tokens)
+        for start in range(len(title_tokens) - token_count + 1):
+            if all(
+                title_tokens[start + offset].startswith(token)
+                for offset, token in enumerate(keyword_tokens)
+            ):
+                return True
+    return False
+
+
 class ArxivListParser(HTMLParser):
     """Extract papers from an arXiv category listing."""
 
@@ -150,8 +167,6 @@ def load_list(code: str, show: int = 2000) -> list:
             href = item[key]
             if href and href.startswith("/"):
                 item[key] = f"{root}{href}"
-        cleaned = re.sub(r"[^\w]+", " ", item["title"], flags=re.UNICODE)
-        item["keywords"] = {word.casefold() for word in cleaned.split() if word}
 
     print(f"Added {len(summary)} items")
     return summary
@@ -208,10 +223,8 @@ def export(
     with pd.ExcelWriter(output_path, engine="xlsxwriter") as writer:
         for config in configs:
             summary = load_list(config["id"], show=show)
-            keyword_filters = [kw.casefold() for kw in config["keywords"]]
-
             is_interesting = [
-                any(keyword in item["title"].casefold() for keyword in keyword_filters)
+                title_matches_keywords(item["title"], config["keywords"])
                 for item in summary
             ]
 

@@ -30,7 +30,7 @@ Edit `config.json`. Each entry creates one worksheet:
 
 - `name`: worksheet name
 - `id`: arXiv category code
-- `keywords`: case-insensitive title fragments to highlight
+- `keywords`: case-insensitive title word prefixes to highlight
 
 For the category code, open the [arXiv list page](https://arxiv.org/list), navigate to a category, and copy the code from the URL. For example, the code for Computer Vision and Pattern Recognition is `cs.CV`.
 
@@ -38,7 +38,10 @@ For the category code, open the [arXiv list page](https://arxiv.org/list), navig
 
 ![alt text](https://github.com/t-lou/viac/blob/master/misc/code.png)
 
-Keywords are partial matches. For example, `detect` matches titles containing `detector`, `detection`, or `detecting`.
+Keywords are matched at word boundaries, with each keyword token acting as a
+prefix. For example, `detect` matches `detector`, `detection`, and `detecting`,
+but not `undetectable`. Multi-word keywords match consecutive title words and
+ignore punctuation between them.
 
 ## Running
 
