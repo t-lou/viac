@@ -103,6 +103,92 @@ def build_analysis_prompt(categories: list[dict]) -> str:
     return "\n".join(lines) + "\n"
 
 
+def build_html_report(categories: list[dict]) -> str:
+    """Create a responsive, accessible reading list of category papers."""
+    parts = [
+        "<!doctype html>",
+        '<html lang="en">',
+        "<head>",
+        '  <meta charset="utf-8">',
+        '  <meta name="viewport" content="width=device-width, initial-scale=1">',
+        "  <title>Recent arXiv papers</title>",
+        "  <style>",
+        "    :root { color-scheme: light; font-family: system-ui, sans-serif; }",
+        "    body { margin: 0 auto; max-width: 60rem; padding: 1.5rem; color: #17202a; line-height: 1.6; }",
+        "    a { color: #0645ad; }",
+        "    a:focus-visible { outline: 3px solid #b45309; outline-offset: 3px; }",
+        "    .skip-link { position: absolute; left: -9999px; }",
+        "    .skip-link:focus { left: 1rem; top: 1rem; background: white; padding: .5rem; }",
+        "    nav ul { display: flex; flex-wrap: wrap; gap: .5rem 1.5rem; padding-left: 1.25rem; }",
+        "    section { margin-block: 2rem; }",
+        "    article { border: 1px solid #aeb6bf; border-radius: .4rem; margin-block: 1rem; padding: 1rem; }",
+        "    article.matched { border-inline-start: .4rem solid #176b3a; background: #f0f8f2; }",
+        "    h2, h3 { line-height: 1.3; }",
+        "    h3 { margin-top: 0; }",
+        "    .badge { color: #14532d; font-weight: 700; }",
+        "    @media print { body { max-width: none; } a { color: inherit; } article { break-inside: avoid; } }",
+        "  </style>",
+        "</head>",
+        "<body>",
+        '  <a class="skip-link" href="#main">Skip to papers</a>',
+        "  <header>",
+        "    <h1>Recent arXiv papers</h1>",
+        "    <p>Keyword matches are labeled; use your browser's find feature to search this page.</p>",
+        "  </header>",
+        '  <nav aria-label="Paper categories">',
+        "    <h2>Categories</h2>",
+        "    <ul>",
+    ]
+
+    for index, category in enumerate(categories, start=1):
+        category_id = f"category-{index}"
+        parts.append(
+            f'      <li><a href="#{category_id}">{html.escape(category["name"])}</a></li>'
+        )
+
+    parts.extend(["    </ul>", "  </nav>", '  <main id="main">'])
+    for index, category in enumerate(categories, start=1):
+        category_id = f"category-{index}"
+        parts.extend(
+            [
+                f'    <section aria-labelledby="{category_id}">',
+                f'      <h2 id="{category_id}">{html.escape(category["name"])} '
+                f"({html.escape(category['id'])})</h2>",
+            ]
+        )
+        if not category["papers"]:
+            parts.append("      <p>No papers found.</p>")
+        for item in category["papers"]:
+            matched_class = " matched" if item["matched"] else ""
+            parts.extend(
+                [
+                    f'      <article class="paper{matched_class}">',
+                    f"        <h3>{html.escape(item['title'])}</h3>",
+                ]
+            )
+            if item["matched"]:
+                parts.append('        <p class="badge">Keyword match</p>')
+            parts.extend(
+                [
+                    f"        <p><strong>Authors:</strong> {html.escape(item['authors'])}</p>",
+                    f"        <p><strong>Subjects:</strong> {html.escape(item['subjects'])}</p>",
+                ]
+            )
+            links = []
+            for key, label in (("link", "Read abstract"), ("pdf", "Download PDF")):
+                url = item[key]
+                if url.startswith(f"{ARXIV_ROOT}/"):
+                    links.append(
+                        f'<a href="{html.escape(url, quote=True)}">{label}</a>'
+                    )
+            if links:
+                parts.append(f"        <p>{' · '.join(links)}</p>")
+            parts.append("      </article>")
+        parts.append("    </section>")
+    parts.extend(["  </main>", "</body>", "</html>", ""])
+    return "\n".join(parts)
+
+
 class ArxivListParser(HTMLParser):
     """Extract papers from an arXiv category listing."""
 
@@ -277,6 +363,7 @@ def export(
     output_path = (output_path or get_output_filename(ROOT_DIR)).resolve()
     output_path.parent.mkdir(parents=True, exist_ok=True)
     prompt_categories = []
+    report_categories = []
 
     with pd.ExcelWriter(output_path, engine="xlsxwriter") as writer:
         for config in configs:
@@ -294,6 +381,16 @@ def export(
                         item
                         for item, is_match in zip(summary, is_interesting)
                         if is_match
+                    ],
+                }
+            )
+            report_categories.append(
+                {
+                    "name": config["name"],
+                    "id": config["id"],
+                    "papers": [
+                        {**item, "matched": is_match}
+                        for item, is_match in zip(summary, is_interesting)
                     ],
                 }
             )
@@ -336,6 +433,8 @@ def export(
         build_analysis_prompt(prompt_categories),
         encoding="utf-8",
     )
+    report_path = output_path.with_suffix(".html")
+    report_path.write_text(build_html_report(report_categories), encoding="utf-8")
     return output_path
 
 
@@ -377,3 +476,4 @@ if __name__ == "__main__":
         raise SystemExit(f"Error: {error}") from error
     print(f"Wrote {output}")
     print(f"Wrote {output.with_suffix('.prompt.md')}")
+    print(f"Wrote {output.with_suffix('.html')}")

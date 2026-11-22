@@ -61,6 +61,11 @@ and to avoid inferring findings from titles alone. To keep large lists
 manageable, it asks the agent to analyze at most 10 papers per response, track
 progress, and synthesize the findings after the final batch.
 
+An accessible `.html` reading list is also created beside the workbook. It
+groups papers by category, labels keyword matches in text as well as color, and
+provides direct abstract and PDF links. Open it in a browser to search, read, or
+print it; no extra packages are required.
+
 Override the configuration, output path, number of entries, or network timeout with command-line options:
 
 ```sh
