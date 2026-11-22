@@ -1,97 +1,157 @@
+import argparse
 import datetime
+import html
 import json
-import sys
-import os
 import re
+import time
+import urllib.error
 import urllib.request
+from html.parser import HTMLParser
 from pathlib import Path
+
 import yaml
 
-
+ROOT_DIR = Path(__file__).resolve().parent
+ARXIV_ROOT = "https://arxiv.org"
+DEFAULT_CONFIG = ROOT_DIR / "config.json"
+VALID_SHOW_VALUES = {25, 50, 100, 250, 500, 1000, 2000}
+PARAMS = {"proxies": {}, "timeout": 30}
 DEBUG_WRITE = False
 DEBUG_READ = False
-DEBUG_FILENAME = Path("temp.txt")
-
-PARAMS = {"proxies": {}}
+DEBUG_FILENAME = ROOT_DIR / "temp.txt"
 
 
 # -----------------------------
 # Utility functions
 # -----------------------------
 def clean_text(text: str) -> str:
-    """Remove indentation and normalize HTML quirks."""
-    return "".join(line.strip() for line in text.splitlines()).replace("href =", "href=")
+    """Normalize whitespace and HTML entities."""
+    return re.sub(r"\s+", " ", html.unescape(text)).strip()
 
 
-def split_text(text: str, start: str, end: str):
-    """Return (middle, rest) between start and end markers."""
-    id_s = text.find(start)
-    id_e = text.find(end)
-    if id_s >= 0 and id_e >= 0 and id_e > id_s:
-        return text[id_s + len(start): id_e], text[id_e + len(end):]
-    return None, None
+class ArxivListParser(HTMLParser):
+    """Extract papers from an arXiv category listing."""
 
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.in_dt = False
+        self.in_dd = False
+        self.field = None
+        self.dt_links = {}
+        self.dd_text = []
+        self.entries = []
 
-def split_text_all(text: str, start: str, end: str):
-    """Extract all segments between start and end markers."""
-    parts = []
-    while text:
-        part, text = split_text(text, start, end)
-        if part is None:
-            break
-        parts.append(part)
-    return parts
+    def handle_starttag(self, tag: str, attrs) -> None:
+        attrs = dict(attrs)
+        if tag == "dt":
+            self.in_dt = True
+            self.dt_links = {}
+            self.dd_text = []
+        elif tag == "dd":
+            self.in_dd = True
+        elif tag == "a" and self.in_dt:
+            title = attrs.get("title")
+            href = attrs.get("href")
+            if title == "Abstract" and href:
+                self.dt_links["link"] = href
+            elif title == "Download PDF" and href:
+                self.dt_links["pdf"] = href
+        elif tag == "div" and self.in_dd:
+            classes = attrs.get("class", "")
+            if "list-title" in classes:
+                self.field = "title"
+                self.dd_text.append(("title", []))
+            elif "list-authors" in classes:
+                self.field = "authors"
+                self.dd_text.append(("authors", []))
+            elif "list-subjects" in classes:
+                self.field = "subjects"
+                self.dd_text.append(("subjects", []))
+        elif tag == "span" and self.field:
+            if "descriptor" in attrs.get("class", ""):
+                return
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag == "div" and self.field:
+            self.field = None
+        elif tag == "dt":
+            self.in_dt = False
+        elif tag == "dd":
+            self.in_dd = False
+            fields = {}
+            for name, chunks in self.dd_text:
+                value = clean_text(" ".join(chunks))
+                if name == "title":
+                    value = re.sub(r"^Title:\s*", "", value, flags=re.IGNORECASE)
+                elif name == "subjects":
+                    value = re.sub(r"^Subjects:\s*", "", value, flags=re.IGNORECASE)
+                fields[name] = value
+
+            if self.dt_links:
+                self.entries.append(
+                    {
+                        "title": fields.get("title", ""),
+                        "authors": fields.get("authors", ""),
+                        "subjects": fields.get("subjects", ""),
+                        "link": self.dt_links.get("link", ""),
+                        "pdf": self.dt_links.get("pdf", ""),
+                    }
+                )
+            self.dd_text = []
+
+    def handle_data(self, data: str) -> None:
+        if self.field and self.in_dd:
+            for name, chunks in reversed(self.dd_text):
+                if name == self.field:
+                    chunks.append(data)
+                    break
 
 
 # -----------------------------
 # arXiv scraping
 # -----------------------------
-def load_list(code: str) -> list:
+def load_list(code: str, show: int = 2000) -> list:
     """Load recent arXiv entries for a category."""
     proxy_handler = urllib.request.ProxyHandler(PARAMS["proxies"])
     opener = urllib.request.build_opener(proxy_handler)
-    root = "https://arxiv.org"
+    root = ARXIV_ROOT
 
-    url = f"{root}/list/{code}/recent?skip=0&show=2000"
+    if show not in VALID_SHOW_VALUES:
+        raise ValueError(f"show must be one of {sorted(VALID_SHOW_VALUES)}")
+    url = f"{root}/list/{code}/recent?skip=0&show={show}"
     print(f"Opening {url}")
 
     if DEBUG_READ and DEBUG_FILENAME.exists():
         text = DEBUG_FILENAME.read_text(encoding="utf-8")
     else:
-        text = opener.open(url).read().decode("utf-8")
+        request = urllib.request.Request(url, headers={"User-Agent": "viac/1.0"})
+        last_error = None
+        for attempt in range(3):
+            try:
+                with opener.open(request, timeout=PARAMS["timeout"]) as response:
+                    text = response.read().decode("utf-8")
+                break
+            except (urllib.error.URLError, TimeoutError) as error:
+                last_error = error
+                if attempt < 2:
+                    time.sleep(1 + attempt)
+        else:
+            raise RuntimeError(f"Could not load {url}: {last_error}") from last_error
 
     if DEBUG_WRITE:
         DEBUG_FILENAME.write_text(text, encoding="utf-8")
 
-    text = clean_text(text)
+    parser = ArxivListParser()
+    parser.feed(text)
+    summary = parser.entries
 
-    links = split_text_all(text, "<dt>", "</dt>")
-    descs = split_text_all(text, "<dd>", "</dd>")
-
-    patterns = {
-        "link": re.compile(r'<a href="([/\w\d\.]+)" title="Abstract"'),
-        "pdf": re.compile(r'<a href="([/\w\d\.]+)" title="Download PDF"'),
-    }
-
-    summary = []
-    for text_link, text_desc in zip(links, descs):
-        item = {key: pattern.findall(text_link) for key, pattern in patterns.items()}
-
-        title, _ = split_text(text_desc, "</span>", "</div>")
-        item["title"] = title or ""
-
-        # Convert to Excel hyperlinks
+    for item in summary:
         for key in ("link", "pdf"):
-            if item[key]:
-                item[key] = f'=HYPERLINK("{root}{item[key][0]}", "goto")'
-            else:
-                item[key] = ""
-
-        # Keyword extraction
-        cleaned = re.sub(r'[,\.\-/"\:;_+]', " ", item["title"])
-        item["keywords"] = {w.lower() for w in cleaned.split() if w}
-
-        summary.append(item)
+            href = item[key]
+            if href and href.startswith("/"):
+                item[key] = f"{root}{href}"
+        cleaned = re.sub(r"[^\w]+", " ", item["title"], flags=re.UNICODE)
+        item["keywords"] = {word.casefold() for word in cleaned.split() if word}
 
     print(f"Added {len(summary)} items")
     return summary
@@ -100,58 +160,131 @@ def load_list(code: str) -> list:
 # -----------------------------
 # Excel formatting
 # -----------------------------
-def highlight(data, mask):
-    fmt = data.copy()
-    fmt.loc[:, :] = ""
-    fmt.loc[mask, :] = "background-color: lime"
-    return fmt
-
-
-def get_output_filename() -> str:
+def get_output_filename(output_dir: Path = ROOT_DIR) -> Path:
     now = datetime.datetime.now()
-    return f"viac_output_{now.year:04}_{now.month:02}_{now.day:02}_{now.hour:02}.xlsx"
+    return (
+        output_dir
+        / f"viac_output_{now.year:04}_{now.month:02}_{now.day:02}_{now.hour:02}.xlsx"
+    )
+
+
+def validate_config(configs) -> None:
+    if not isinstance(configs, list) or not configs:
+        raise ValueError("config.json must contain a non-empty JSON list")
+
+    names = set()
+    for config in configs:
+        if not isinstance(config, dict):
+            raise ValueError("Each config entry must be a JSON object")
+        name = config.get("name")
+        code = config.get("id")
+        keywords = config.get("keywords")
+        if not name or not code:
+            raise ValueError("Each config entry requires name and id")
+        if not isinstance(keywords, list) or not all(
+            isinstance(k, str) for k in keywords
+        ):
+            raise ValueError(f"keywords for {name!r} must be a list of strings")
+        safe_name = re.sub(r"[\[\]:*?/\\]", "_", str(name))[:31]
+        if safe_name in names:
+            raise ValueError(f"Duplicate or conflicting worksheet name: {safe_name}")
+        names.add(safe_name)
 
 
 # -----------------------------
 # Export logic
 # -----------------------------
-def export():
+def export(
+    config_path: Path = DEFAULT_CONFIG, output_path: Path = None, show: int = 2000
+):
     import pandas as pd
 
-    configs = json.loads(Path("config.json").read_text())
+    config_path = Path(config_path).resolve()
+    configs = json.loads(config_path.read_text(encoding="utf-8"))
+    validate_config(configs)
+    output_path = (output_path or get_output_filename(ROOT_DIR)).resolve()
+    output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    with pd.ExcelWriter(get_output_filename(), engine="xlsxwriter") as writer:
+    with pd.ExcelWriter(output_path, engine="xlsxwriter") as writer:
         for config in configs:
-            summary = load_list(config["id"])
+            summary = load_list(config["id"], show=show)
+            keyword_filters = [kw.casefold() for kw in config["keywords"]]
 
             is_interesting = [
-                any(
-                    kw_cfg in kw_title
-                    for kw_cfg in config["keywords"]
-                    for kw_title in item["keywords"]
-                )
+                any(keyword in item["title"].casefold() for keyword in keyword_filters)
                 for item in summary
             ]
 
-            df = pd.DataFrame({
-                key: [item[key] for item in summary]
-                for key in ("title", "link", "pdf")
-            })
+            df = pd.DataFrame(
+                {
+                    key: [item[key] for item in summary]
+                    for key in ("title", "link", "pdf", "authors", "subjects")
+                }
+            )
 
-            df.style.apply(lambda _: highlight(df, is_interesting), axis=None)\
-                .to_excel(writer, sheet_name=config["name"], index=False)
+            sheet_name = re.sub(r"[\[\]:*?/\\]", "_", config["name"])[:31]
+            df.to_excel(writer, sheet_name=sheet_name, index=False)
 
-            sheet = writer.sheets[config["name"]]
-            sheet.set_column(0, 0, 128)
-            sheet.set_column(1, 2, 4)
+            sheet = writer.sheets[sheet_name]
+            workbook = writer.book
+            link_format = workbook.add_format(
+                {"font_color": "#0563C1", "underline": True}
+            )
+            highlight_format = workbook.add_format({"bg_color": "#B7E1CD"})
+            sheet.freeze_panes(1, 0)
+            sheet.autofilter(0, 0, len(df), len(df.columns) - 1)
+            sheet.set_column(0, 0, 70)
+            sheet.set_column(1, 2, 12)
+            sheet.set_column(3, 3, 40)
+            sheet.set_column(4, 4, 35)
+
+            for row, item in enumerate(summary, start=1):
+                row_format = highlight_format if is_interesting[row - 1] else None
+                sheet.write(row, 0, item["title"], row_format)
+                sheet.write(row, 3, item["authors"], row_format)
+                sheet.write(row, 4, item["subjects"], row_format)
+                if item["link"]:
+                    sheet.write_url(row, 1, item["link"], link_format, "abstract")
+                if item["pdf"]:
+                    sheet.write_url(row, 2, item["pdf"], link_format, "pdf")
+
+    return output_path
 
 
 # -----------------------------
 # Main
 # -----------------------------
-if __name__ == "__main__":
-    proxy_path = Path(sys.argv[0]).parent / ".proxy.yaml"
-    if proxy_path.exists():
-        PARAMS["proxies"] = yaml.safe_load(proxy_path.read_text())
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description="Collect recent arXiv papers into an Excel workbook."
+    )
+    parser.add_argument(
+        "--config", type=Path, default=DEFAULT_CONFIG, help="Path to config JSON"
+    )
+    parser.add_argument("--output", type=Path, help="Output XLSX path")
+    parser.add_argument(
+        "--show", type=int, choices=sorted(VALID_SHOW_VALUES), default=2000
+    )
+    parser.add_argument(
+        "--timeout", type=float, default=30, help="Network timeout in seconds"
+    )
+    return parser.parse_args()
 
-    export()
+
+if __name__ == "__main__":
+    args = parse_args()
+    proxy_path = ROOT_DIR / ".proxy.yaml"
+    if proxy_path.exists():
+        try:
+            PARAMS["proxies"] = (
+                yaml.safe_load(proxy_path.read_text(encoding="utf-8")) or {}
+            )
+        except yaml.YAMLError as error:
+            raise SystemExit(f"Invalid proxy configuration: {error}") from error
+    PARAMS["timeout"] = args.timeout
+
+    try:
+        output = export(args.config, args.output, args.show)
+    except (OSError, json.JSONDecodeError, ValueError, RuntimeError) as error:
+        raise SystemExit(f"Error: {error}") from error
+    print(f"Wrote {output}")
