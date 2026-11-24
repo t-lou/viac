@@ -1,22 +1,39 @@
 # VI(weekly)AC(academy)
 
-VIAC downloads recently listed arXiv papers for the categories in `config.json` and exports their titles, authors, subjects, abstract links, and PDF links to an Excel workbook.
+VIAC collects recent arXiv papers for the categories in `config.json`, highlights
+titles that match configured keywords, and writes:
 
-Titles matching configured keywords are highlighted, making it easier to scan a category once a week.
+- an Excel workbook
+- an accessible HTML reading list
+- a Markdown prompt containing the matched papers
+- optional AI summaries and a Markdown digest
 
-![alt text](https://github.com/t-lou/viac/blob/master/misc/example.png)
+![VIAC example](misc/example.png)
 
 ## Requirements
 
-Python 3.14-compatible virtual environment with:
-
-- `pandas`
+- macOS or another system with Python 3.14
+- `$HOME/.venv314`
 - `xlsxwriter`
-- `pyyaml`
+- `pyyaml` (only when using a `.proxy.yaml` file)
+
+Create or update the virtual environment:
+
+```sh
+python3.14 -m venv "$HOME/.venv314"
+"$HOME/.venv314/bin/python" -m pip install --upgrade pip xlsxwriter pyyaml
+```
+
+You can activate it instead of using the full executable path:
+
+```sh
+source "$HOME/.venv314/bin/activate"
+python viac.py
+```
 
 ## Configuration
 
-Edit `config.json`. Each entry creates one worksheet:
+Edit `config.json` in the repository root:
 
 ```json
 [
@@ -24,76 +41,142 @@ Edit `config.json`. Each entry creates one worksheet:
     "name": "Vision",
     "id": "cs.CV",
     "keywords": ["lidar", "detect", "autonomous"]
+  },
+  {
+    "name": "Robotics",
+    "id": "cs.RO",
+    "keywords": ["lidar", "locali", "semantic"]
   }
 ]
 ```
 
-- `name`: worksheet name
+- `name`: category label and worksheet name
 - `id`: arXiv category code
-- `keywords`: case-insensitive title word prefixes to highlight
+- `keywords`: case-insensitive title prefixes to highlight
 
-For the category code, open the [arXiv list page](https://arxiv.org/list), navigate to a category, and copy the code from the URL. For example, the code for Computer Vision and Pattern Recognition is `cs.CV`.
+To find a category code, open the [arXiv subject list](https://arxiv.org/list),
+select a category, and copy the code from the URL. For example,
+`https://arxiv.org/list/cs.CV/recent` uses `cs.CV`.
 
-![alt text](https://github.com/t-lou/viac/blob/master/misc/main.png)
+Keyword matching uses word boundaries and prefixes. `detect` matches
+`detector`, `detection`, and `detecting`, but not `undetectable`. Multi-word
+keywords match consecutive title words while ignoring punctuation between
+words; for example, `point cloud` matches "Point Clouds".
 
-![alt text](https://github.com/t-lou/viac/blob/master/misc/code.png)
+## Run
 
-Keywords are matched at word boundaries, with each keyword token acting as a
-prefix. For example, `detect` matches `detector`, `detection`, and `detecting`,
-but not `undetectable`. Multi-word keywords match consecutive title words and
-ignore punctuation between them.
-
-## Running
-
-Using the project virtual environment:
+From the repository root, run the program with the virtual environment:
 
 ```sh
-$HOME/.venv314/bin/python viac.py
+"$HOME/.venv314/bin/python" viac.py
 ```
 
-By default, the workbook and its companion files are created in `.reports/`,
-with names such as `.reports/viac_output_2026_11_22_01.xlsx`. The `.reports/`
-directory is ignored by Git. If you use `--output`, all files are written beside
-the specified workbook path instead.
+By default, VIAC creates timestamped files in `reports/`:
 
-VIAC also creates a `.prompt.md` file beside the workbook (for example,
-`.reports/viac_output_2026_11_22_01.prompt.md`). It contains a copy-ready request for an
-AI agent and the matched paper titles, authors, and arXiv links, grouped by
-category. The prompt asks the agent to ground its analysis in the linked sources
-and to avoid inferring findings from titles alone. To keep large lists
-manageable, it asks the agent to analyze at most 10 papers per response, track
-progress, and synthesize the findings after the final batch.
+```text
+reports/
+  viac_output_YYYY_MM_DD_HH.xlsx
+  viac_output_YYYY_MM_DD_HH.html
+  viac_output_YYYY_MM_DD_HH.prompt.md
+```
 
-An accessible `.html` reading list is also created beside the workbook. It
-groups papers by category, labels keyword matches in text as well as color, and
-provides direct abstract and PDF links. Open it in a browser to search, read, or
-print it; no extra packages are required.
+The workbook and companion files share the same base name. `reports/` is ignored
+by Git.
 
-Override the configuration, output path, number of entries, or network timeout with command-line options:
+### Command-line options
+
+Override the configuration, output path, listing size, or network timeout:
 
 ```sh
-$HOME/.venv314/bin/python viac.py --config config.json --output papers.xlsx --show 100 --timeout 30
+"$HOME/.venv314/bin/python" viac.py \
+  --config config.json \
+  --output papers.xlsx \
+  --show 100 \
+  --timeout 30
 ```
 
 Valid `--show` values are `25`, `50`, `100`, `250`, `500`, `1000`, and `2000`.
+The default is `2000`.
 
-Run `--help` for the complete list of options:
+Use `--cache-dir` to cache arXiv category listing pages, or run
+`"$HOME/.venv314/bin/python" viac.py --help` for the complete option list.
+
+## Outputs
+
+### Excel workbook
+
+The workbook contains one worksheet per category. Title keyword matches are
+highlighted, and each paper includes an arXiv abstract link and PDF link.
+
+### HTML reading list
+
+The HTML report can be opened directly in a browser. It is grouped by category,
+labels matches in text as well as color, and includes abstract and PDF links.
+
+### Analysis prompt
+
+The `.prompt.md` companion contains the matched papers grouped by category.
+It can be pasted into an AI chat or agent and asks the model to use the linked
+sources rather than infer conclusions from titles alone.
+
+### Optional AI summaries
+
+VIAC can send abstracts to any OpenAI-compatible `/chat/completions` endpoint,
+including Ollama and hosted providers. Configure the endpoint and model with
+command-line options or environment variables:
 
 ```sh
-$HOME/.venv314/bin/python viac.py --help
+export VIAC_LLM_API_KEY="..."
+"$HOME/.venv314/bin/python" viac.py \
+  --llm-base-url https://api.openai.com/v1 \
+  --llm-model <model> \
+  --focus "robotics, perception, and autonomous systems"
 ```
+
+For a local Ollama endpoint:
+
+```sh
+"$HOME/.venv314/bin/python" viac.py \
+  --llm-base-url http://localhost:11434/v1 \
+  --llm-model llama3.1
+```
+
+The API key is read only from `VIAC_LLM_API_KEY`; it is never accepted as a
+command-line argument. The equivalent environment variables are:
+
+- `VIAC_LLM_BASE_URL`
+- `VIAC_LLM_MODEL`
+- `VIAC_LLM_API_KEY`
+
+AI runs can also use:
+
+- `--focus TEXT`: tell the model what topics and findings matter
+- `--batch-size N`: papers summarized per request (default `5`)
+- `--max-papers N`: maximum papers summarized (default `60`)
+- `--llm-temperature N`: optional sampling temperature
+- `--llm-timeout N`: LLM request timeout in seconds (default `300`)
+- `--no-llm`: skip AI summaries even if environment settings are present
+
+When AI summaries succeed, VIAC adds an importance score and summary to the
+Excel workbook, adds an AI digest to the HTML report, and writes
+`<output-name>.digest.md`. Summary cache data is stored in
+`summary_cache.json` beside the workbook and reused across runs.
 
 ## Proxy configuration
 
-Copy `.proxy.yaml.example` to `.proxy.yaml` and add proxy URLs if required:
+VIAC uses environment HTTP(S) proxy variables by default. To use a repository-
+specific proxy for arXiv requests, copy the example:
 
-```yaml
-http:
-  URL
-https:
-  URL
-ftp:
-  URL
+```sh
+cp .proxy.yaml.example .proxy.yaml
 ```
 
-The `.proxy.yaml` file is excluded from Git.
+Then edit it:
+
+```yaml
+http: http://proxy.example:3128
+https: http://proxy.example:3128
+ftp: http://proxy.example:3128
+```
+
+`.proxy.yaml` is ignored by Git.
