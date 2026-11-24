@@ -584,7 +584,6 @@ def write_workbook(path: Path, categories: list[Category]) -> None:
     widths = [70, 12, 12, 40, 35, 25]
     if with_abstract:
         columns.append("abstract")
-        widths.append(100)
 
     with xlsxwriter.Workbook(path) as workbook:
         header = workbook.add_format({"bold": True})
@@ -595,9 +594,6 @@ def write_workbook(path: Path, categories: list[Category]) -> None:
                 "text": workbook.add_format(fill),
                 "link": workbook.add_format(
                     {**fill, "font_color": "#0563C1", "underline": True}
-                ),
-                "wrap": workbook.add_format(
-                    {**fill, "text_wrap": True, "valign": "top"}
                 ),
             }
 
@@ -620,7 +616,7 @@ def write_workbook(path: Path, categories: list[Category]) -> None:
                 sheet.write(row, 4, paper.subjects, fmt["text"])
                 sheet.write(row, 5, ", ".join(paper.hits), fmt["text"])
                 if with_abstract and paper.abstract:
-                    sheet.write(row, 6, paper.abstract, fmt["wrap"])
+                    sheet.write(row, 6, paper.abstract, fmt["text"])
 
 
 # -----------------------------
