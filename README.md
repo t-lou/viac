@@ -117,7 +117,15 @@ labels matches in text as well as color, and includes abstract and PDF links.
 
 The `.prompt.md` companion contains the matched papers grouped by category.
 It can be pasted into an AI chat or agent and asks the model to use the linked
-sources rather than infer conclusions from titles alone.
+sources rather than infer conclusions from titles alone. It also asks the model
+to assess each paper's relevance to your interests and recommend whether to read,
+skim, or skip it.
+
+To personalize these assessments, copy `about_me_example.txt` to
+`about_me.txt` in the repository root and edit it to describe your background
+and research interests. VIAC includes this file in the generated prompt when it
+exists. Without it, the prompt asks for a cautious general assessment.
+`about_me.txt` is ignored by Git so your personal information stays local.
 
 ### Optional AI summaries
 
